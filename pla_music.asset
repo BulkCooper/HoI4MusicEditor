@@ -1,0 +1,116 @@
+
+#PLA
+
+music = {
+	name = "pla1"
+	file = "pla1.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla2"
+	file = "pla2.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla3"
+	file = "pla3.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla4"
+	file = "pla4.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla5"
+	file = "pla5.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla6"
+	file = "pla6.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla7"
+	file = "pla7.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla8"
+	file = "pla8.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla9"
+	file = "pla9.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla10"
+	file = "pla10.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla11"
+	file = "pla11.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla12"
+	file = "pla12.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla13"
+	file = "pla13.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla14"
+	file = "pla14.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla15"
+	file = "pla15.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla16"
+	file = "pla16.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla17"
+	file = "pla17.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla18"
+	file = "pla18.ogg"
+	volume = 0.65
+}
+
+music = {
+	name = "pla19"
+	file = "pla19.ogg"
+	volume = 0.65
+}

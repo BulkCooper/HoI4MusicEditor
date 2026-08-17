@@ -1,0 +1,18 @@
+# ============================================
+#  sprite 注册:把电台图标图片注册为游戏资源
+# ============================================
+# 规则:
+#  - 本文件放 interface/ 下,文件名随意(.gfx 扩展名即可)
+#  - name = "GFX_radio_my_album_art" 被 .gui 文件引用,两者要一致
+#  - texturefile 相对 mod 根目录,指向图片文件
+#  - noOfFrames = 2:图片是"横向两帧"拼在一张图里(标准尺寸 304x120,每帧 152x120)
+#    第 1 帧(左)= 未选中,第 2 帧(右)= 选中(高亮)
+#  - 正式发布建议用 DDS(DXT5);png 也能加载,但体积大
+
+spriteTypes = {
+	spriteType = {
+		name = "GFX_radio_my_album_art"
+		texturefile = "gfx/radio_my_album_art.png"
+		noOfFrames = 2
+	}
+}

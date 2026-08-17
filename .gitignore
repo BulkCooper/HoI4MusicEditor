@@ -1,0 +1,17 @@
+# 构建产物
+build/
+dist/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 发布包
+release/
+
+# 本地音乐素材（个人文件，不纳入版本控制）
+/music/
+
+# 工具配置（含本机路径，不上传）
+.reasonix/
+reasonix.toml
