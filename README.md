@@ -90,6 +90,7 @@
 | `README.md` | 使用说明（本文件） |
 | `CHANGELOG.md` | 完整更新日志：逐版本列出所有更新内容 |
 | `DEVELOPMENT.md` | 开发文档：模块架构、版本规则、每次更新的维护清单 |
+| `docs\HOI4_电台制作指南.md` | 电台（Music Station）制作权威参考：文件结构、硬性规格、条件播放、封面等 |
 | `app.py` | GUI 主程序（tkinter） |
 | `music_lib.py` | 核心库：`music.asset` / `_songs.txt` 解析、序列化、播放逻辑预设、校验 |
 | `test_music_lib.py` | 单元测试（50 项，含真实文件往返一致性、音频转换、电台 MOD 结构） |

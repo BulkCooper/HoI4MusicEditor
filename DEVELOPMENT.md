@@ -33,6 +33,7 @@ logo.ico                软件图标（窗口 + exe）
 README.md               使用说明
 CHANGELOG.md            版本更新记录
 DEVELOPMENT.md          开发文档（本文件）
+docs/HOI4_电台制作指南.md  电台制作权威参考（文件结构 / 硬性规格 / 条件播放 / 封面）
 pla_music.asset / pla_songs.txt   参考样例（标准格式范本）
 radio_template/         电台 MOD 结构模板（gfx / interface / music）
 music/                  （本地音乐素材，**不入库**）
@@ -185,6 +186,6 @@ git push origin main
 
 ## 9. 已知限制与经验教训
 
-- **`chance` 条件播放不可靠（重要教训）**：`_songs.txt` 的 `chance` 权重/条件仅在游戏「加权随机（Weighted Shuffle）」播放模式下生效，且该模式存在社区已知 bug（条件时常不生效）。v1.7.0 曾据此实现「特定时间播放 / 独占」（写入 `factor = 0` + `date` 触发器的 modifier 块，写法与官方 Sabaton DLC 一致），**游戏内实测（含切到加权随机模式）仍无效**，故 v1.7.1 整体移除。今后不要基于该机制设计功能。
+- **`chance` 条件播放不可靠（重要教训）**：`_songs.txt` 的 `chance` 权重/条件仅在游戏「加权随机（Weighted Shuffle）」播放模式下生效，且该模式存在社区已知 bug（条件时常不生效）。v1.7.0 曾据此实现「特定时间播放 / 独占」（写入 `factor = 0` + `date` 触发器的 modifier 块，写法与官方 Sabaton DLC 一致），**游戏内实测（含切到加权随机模式）仍无效**，故 v1.7.1 整体移除。今后不要基于该机制设计功能。（电台文件结构、硬性规格等详见 [docs/HOI4_电台制作指南.md](docs/HOI4_电台制作指南.md)）
 - 窗口居中基于主窗口所在显示器；高 DPI（150%+）下 tkinter 由系统缩放，文字可能略模糊。
 - 自签名证书不受系统信任，SmartScreen 仍提示未知发布者。
