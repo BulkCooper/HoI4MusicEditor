@@ -34,7 +34,7 @@ from PIL import Image, ImageTk
 import music_lib
 from music_lib import MusicFolder, summarize_conditions
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 APP_TITLE = f"HoI4 音乐播放列表编辑器 v{VERSION}"
 AUTHOR_NAME = "BulkCooper"
 QQ_GROUP = "QQ交流群：1076344041"
@@ -206,13 +206,11 @@ class SongDialog(tk.Toplevel):
                  name: str = "", volume: float = DEFAULT_VOLUME,
                  factor: float = DEFAULT_FACTOR,
                  war: str = "任意", faction: str = "通用",
-                 conditions=None, advanced: bool = False,
-                 time_from: Optional[str] = None, time_to: Optional[str] = None,
-                 exclusive_mode: str = "none"):
+                 conditions=None, advanced: bool = False):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
-        self.geometry("512x540")  # 显式尺寸，避免 wait_visibility 阶段窗口未布局导致裁切
+        self.geometry("512x449")  # 显式尺寸，避免 wait_visibility 阶段窗口未布局导致裁切
         self._result = None
         conditions = conditions or []
 
@@ -263,32 +261,6 @@ class SongDialog(tk.Toplevel):
         tk.Scale(row, from_=0.1, to=10.0, resolution=0.1, orient="horizontal",
                  length=130, variable=self._factor_var, command=_show_fac).pack(side="left", padx=4)
         _show_fac()
-
-        # ---- 特定时间播放（可选） ----
-        ttk.Separator(body).pack(fill="x", pady=6)
-        ttk.Label(body, text="特定时间播放（可选）：").pack(anchor="w", **pad)
-        self._time_from_var = tk.StringVar(value=time_from or "")
-        self._time_to_var = tk.StringVar(value=time_to or "")
-        self._exclusive_var = tk.StringVar(value=exclusive_mode or "none")
-        row = ttk.Frame(body)
-        row.pack(fill="x", **pad)
-        ttk.Label(row, text="起日：", width=12).pack(side="left")
-        ttk.Entry(row, textvariable=self._time_from_var, width=14).pack(side="left")
-        ttk.Label(row, text="止日（留空=永久）：", width=16).pack(side="left", padx=(8, 0))
-        ttk.Entry(row, textvariable=self._time_to_var, width=14).pack(side="left")
-        ttk.Label(body, text="  格式 1936.12.12；起日之前不播，止日之后不播（止日留空则起日之后一直可播）",
-                  foreground="gray").pack(anchor="w", padx=(22, 0))
-        row = ttk.Frame(body)
-        row.pack(fill="x", **pad)
-        ttk.Label(row, text="独占：", width=12).pack(side="left")
-        ttk.Radiobutton(row, text="不独占", value="none",
-                        variable=self._exclusive_var).pack(side="left", padx=2)
-        ttk.Radiobutton(row, text="窗口内禁播其它歌", value="window",
-                        variable=self._exclusive_var).pack(side="left", padx=2)
-        ttk.Radiobutton(row, text="永久禁播其它歌", value="forever",
-                        variable=self._exclusive_var).pack(side="left", padx=2)
-        ttk.Label(body, text="  独占：该时间段内（或之后）同电台其它歌不播放，只播这首",
-                  foreground="gray").pack(anchor="w", padx=(22, 0))
 
         # ---- 播放逻辑（预设） ----
         ttk.Label(body, text="播放逻辑（预设组合）：").pack(anchor="w", **pad)
@@ -410,34 +382,10 @@ class SongDialog(tk.Toplevel):
                 conds.append(s)
         return conds
 
-    @staticmethod
-    def _valid_date(s: str) -> bool:
-        """校验日期格式 YYYY.M.D / YYYY.MM.DD（月份 1-12、天数 1-31）。"""
-        parts = s.split(".")
-        if len(parts) != 3 or not all(p.isdigit() for p in parts):
-            return False
-        y, m, d = (int(p) for p in parts)
-        return 1000 <= y <= 9999 and 1 <= m <= 12 and 1 <= d <= 31
-
     def _ok(self):
         name = self._name_var.get().strip()
         if not name:
             messagebox.showerror("错误", "song name 不能为空", parent=self)
-            return
-        time_from = self._time_from_var.get().strip()
-        time_to = self._time_to_var.get().strip()
-        exclusive = self._exclusive_var.get()
-        if time_from and not self._valid_date(time_from):
-            messagebox.showerror("错误", "起日格式应为 YYYY.M.D，如 1936.12.12", parent=self)
-            return
-        if time_to and not self._valid_date(time_to):
-            messagebox.showerror("错误", "止日格式应为 YYYY.M.D，如 1939.9.1", parent=self)
-            return
-        if time_to and not time_from:
-            messagebox.showerror("错误", "填写了止日但未填起日", parent=self)
-            return
-        if exclusive != "none" and not time_from:
-            messagebox.showerror("错误", "选择独占前请先设置起日（特定时间播放）", parent=self)
             return
         if self._war_var.get() == "主菜单" and name != "maintheme":
             if not messagebox.askyesno(
@@ -462,9 +410,6 @@ class SongDialog(tk.Toplevel):
             "factor": factor,
             "conditions": self._parse_conditions(),
             "advanced": self._advanced_var.get(),
-            "time_from": time_from or None,
-            "time_to": time_to or None,
-            "exclusive_mode": exclusive,
         }
         self.destroy()
 
@@ -2064,13 +2009,8 @@ class App(TkinterDnD.Tk):
             rules = rules_by_song.get(e.name, [])
             conds = rules[0].conditions if rules else []
             factor = rules[0].factor if rules else None
-            r0 = rules[0] if rules else None
-            logic = summarize_conditions(conds)
-            tsum = music_lib.summarize_time(
-                r0.time_from if r0 else None, r0.time_to if r0 else None)
-            if tsum:
-                logic = f"{logic} ｜ {tsum}"
-            rows.append((e.name, e.file, e.volume, logic, factor, conds))
+            rows.append((e.name, e.file, e.volume, summarize_conditions(conds),
+                         factor, conds))
         return rows
 
     def _refresh_tree(self):
@@ -2254,9 +2194,7 @@ class App(TkinterDnD.Tk):
                 messagebox.showerror("错误", f"song name 已存在：{res['name']}")
                 continue
             self.mf.add_entry(res["name"], target, res["volume"],
-                              res["factor"], res["conditions"],
-                              res.get("time_from"), res.get("time_to"),
-                              res.get("exclusive_mode", "none"))
+                              res["factor"], res["conditions"])
             self.dirty = True
         self._refresh_tree()
 
@@ -2354,7 +2292,6 @@ class App(TkinterDnD.Tk):
         rules = self.mf.rules_for_song(entry.name)
         conds = rules[0].conditions if rules else []
         factor = rules[0].factor if rules else DEFAULT_FACTOR
-        r0 = rules[0] if rules else None
         war, faction = music_lib.preset_from_conditions(conds)
         # 无法识别全部条件时切到高级模式
         known = set(music_lib._WAR_BY_COND) | set(music_lib._FACTION_BY_COND)
@@ -2364,10 +2301,7 @@ class App(TkinterDnD.Tk):
             name=entry.name,
             volume=entry.volume if entry.volume is not None else self.default_volume,
             factor=factor if factor is not None else DEFAULT_FACTOR,
-            war=war, faction=faction, conditions=conds, advanced=advanced,
-            time_from=r0.time_from if r0 else None,
-            time_to=r0.time_to if r0 else None,
-            exclusive_mode=r0.exclusive_mode if r0 else "none")
+            war=war, faction=faction, conditions=conds, advanced=advanced)
         self.wait_window(dlg)
         res = dlg.result()
         if res is None:
@@ -2378,10 +2312,7 @@ class App(TkinterDnD.Tk):
                 new_name=res["name"] if res["name"] != entry.name else None,
                 new_volume=res["volume"],
                 new_factor=res["factor"],
-                new_conditions=res["conditions"],
-                new_time_from=res.get("time_from"),
-                new_time_to=res.get("time_to"),
-                new_exclusive_mode=res.get("exclusive_mode", "none"))
+                new_conditions=res["conditions"])
         except AssertionError as e:
             messagebox.showerror("错误", str(e))
             return

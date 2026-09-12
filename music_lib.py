@@ -25,9 +25,6 @@ from typing import List, Optional
 # 数据结构
 # ---------------------------------------------------------------------------
 
-# 哨兵：表示「未传参」而非「传 None 清除」（update_entry 时间字段用）
-_UNSET = object()
-
 @dataclass
 class SongRule:
     """_songs.txt 中的一条播放规则（一个 music = { ... } 块）。"""
@@ -35,11 +32,6 @@ class SongRule:
     factor: Optional[float] = None
     conditions: List[str] = field(default_factory=list)  # 如 ["has_war = no", "has_government = democratic"]
     raw_lines: List[str] = field(default_factory=list)   # 原始行（保留原样）
-    # ---- 特定时间播放（v1.7.0）----
-    time_from: Optional[str] = None    # 起始日期 "1936.12.12"；None = 不限制
-    time_to: Optional[str] = None      # 结束日期；None = 永久（从 time_from 之后一直可播）
-    exclusive_mode: str = "none"       # "none" 不独占 | "window" 时间窗口内禁播其它歌 | "forever" 永久禁播其它歌
-    extra_modifiers: List[List[str]] = field(default_factory=list)  # 额外 modifier 块内容行（时间/独占注入，含标记注释）
 
 
 @dataclass
@@ -197,142 +189,51 @@ def parse_asset(text: str) -> tuple[List[str], List[AssetEntry]]:
 # _songs.txt 解析
 # ---------------------------------------------------------------------------
 
-def _split_modifier_blocks(body: List[str]) -> Tuple[List[str], List[List[str]]]:
-    """把 music 块 body 内的多个 `modifier = { ... }` 块切分。
-
-    返回 (main_block, extra_blocks)：main 是第一个 modifier 块的内部行，
-    extra 是其余 modifier 块的内部行（每个为一行列表，含 `# time_from` 等标记注释）。
-    不影响嵌套：`OR = { ... }` / `AND = { ... }` 的深度由大括号计数追踪。
-    """
-    main: List[str] = []
-    extras: List[List[str]] = []
-    cur: Optional[List[str]] = None
-    depth = 0
-    for bl in body:
-        s = bl.strip()
-        if s.startswith("modifier = {"):
-            cur = []
-            depth = 1
-            if "}" in s:
-                # 单行闭合：modifier = { factor = 1 } → 提取花括号内内容
-                inner = s[s.index("{") + 1 : s.rindex("}")]
-                if inner.strip():
-                    cur.append(inner)
-                if not main:
-                    main = cur
-                else:
-                    extras.append(cur)
-                cur = None
-            continue
-        if cur is None:
-            # modifier 之外的行（song = 等）
-            continue
-        depth += s.count("{") - s.count("}")
-        if depth > 0:
-            cur.append(bl)
-        else:
-            # 块结束（遇到闭合 }
-            if not main:
-                main = cur
-            else:
-                extras.append(cur)
-            cur = None
-    if cur is not None and cur:
-        # 未闭合的块：保守处理，并入 main
-        if not main:
-            main = cur
-        else:
-            extras.append(cur)
-    return main, extras
-
-
-TIME_FROM_MARK = "# time_from ="
-TIME_TO_MARK = "# time_to ="
-EXCLUSIVE_MARK = "# exclusive ="
-
-
-def _extract_time_fields(extra_blocks: List[List[str]]) -> Tuple[Optional[str], Optional[str], str]:
-    """从 extra modifier 块中提取特定时间播放设置（标记注释形式）。
-
-    返回 (time_from, time_to, exclusive_mode)，无标记时为 (None, None, "none")。
-    自动注入的独占块（# auto exclusive = ...）不参与提取。
-    """
-    time_from: Optional[str] = None
-    time_to: Optional[str] = None
-    exclusive = "none"
-    for block in extra_blocks:
-        for l in block:
-            s = l.strip()
-            if s.startswith(TIME_FROM_MARK):
-                time_from = s[len(TIME_FROM_MARK):].strip() or None
-            elif s.startswith(TIME_TO_MARK):
-                time_to = s[len(TIME_TO_MARK):].strip() or None
-            elif s.startswith(EXCLUSIVE_MARK):
-                exclusive = s[len(EXCLUSIVE_MARK):].strip() or "none"
-    return time_from, time_to, exclusive
-
-
-def summarize_time(time_from: Optional[str], time_to: Optional[str]) -> str:
-    """时间设置摘要（树视图显示）：1936.12.12 起 / 1936.12.12~1937.1.1。"""
-    if not time_from:
-        return ""
-    if time_to:
-        return f"{time_from}~{time_to}"
-    return f"{time_from} 起"
-
-
 def parse_songs(text: str) -> tuple[List[str], List[SongRule]]:
     """
     解析 _songs.txt。
     返回 (outer_lines, rules)。music_station 等顶层键留在 outer_lines。
-    支持一首歌多个 modifier 块：首个为主块（factor + conditions），
-    其余块为特定时间播放/独占注入块（内容原样保留在 extra_modifiers）。
     """
     lines = _split_keepends(text)
     outer, chunks = _scan_top_blocks(lines, "music")
     rules: List[SongRule] = []
     for _start, _end, body in chunks:
         song = None
-        # modifier 之外的行：找 song
+        factor: Optional[float] = None
+        conditions: List[str] = []
+        in_modifier = False
         for bl in body:
-            if bl.strip() == "modifier = {":
-                break
-            kv = _parse_kv(bl.strip())
+            stripped = bl.strip()
+            if stripped.startswith(MAIN_THEME_COND):
+                # 主菜单哨兵注释：保留以便持久化识别「主菜单」播放逻辑
+                conditions.append(MAIN_THEME_COND)
+                continue
+            if stripped.startswith("#"):
+                continue
+            if stripped == "modifier = {":
+                in_modifier = True
+                continue
+            if stripped == "}" and in_modifier:
+                # 可能结束 modifier 或 chance
+                continue
+            if in_modifier:
+                kv = _parse_kv(stripped)
+                if kv:
+                    k, v = kv
+                    if k == "factor":
+                        try:
+                            factor = float(v)
+                        except ValueError:
+                            pass
+                    else:
+                        conditions.append(f"{k} = {v}")
+                continue
+            kv = _parse_kv(stripped)
             if kv and kv[0] == "song":
                 song = kv[1]
-        main, extras = _split_modifier_blocks(body)
-        factor, conditions = _parse_main_modifier(main)
-        time_from, time_to, exclusive = _extract_time_fields(extras)
         if song is not None:
-            rules.append(SongRule(song=song, factor=factor, conditions=conditions,
-                                  raw_lines=body, time_from=time_from, time_to=time_to,
-                                  exclusive_mode=exclusive, extra_modifiers=extras))
+            rules.append(SongRule(song=song, factor=factor, conditions=conditions, raw_lines=body))
     return outer, rules
-
-
-def _parse_main_modifier(main: List[str]) -> Tuple[Optional[float], List[str]]:
-    """解析主 modifier 块内部行 → (factor, conditions)。"""
-    factor: Optional[float] = None
-    conditions: List[str] = []
-    for bl in main:
-        stripped = bl.strip()
-        if stripped.startswith(MAIN_THEME_COND):
-            # 主菜单哨兵注释：保留以便持久化识别「主菜单」播放逻辑
-            conditions.append(MAIN_THEME_COND)
-            continue
-        if stripped.startswith("#"):
-            continue
-        kv = _parse_kv(stripped)
-        if kv:
-            k, v = kv
-            if k == "factor":
-                try:
-                    factor = float(v)
-                except ValueError:
-                    pass
-            else:
-                conditions.append(f"{k} = {v}")
-    return factor, conditions
 
 
 # ---------------------------------------------------------------------------
@@ -349,10 +250,8 @@ def _fmt_asset_entry(name: str, file: str, volume: Optional[float]) -> List[str]
     return [l + nl for l in out] + [nl]
 
 
-def _fmt_song_rule(song: str, factor: Optional[float], conditions: List[str],
-                   extra_modifiers: Optional[List[List[str]]] = None) -> List[str]:
-    """标准格式（参考 pla_songs.txt）：块之间空一行，闭合行保留尾随 tab。
-    extra_modifiers 为额外的 modifier 块内部行（特定时间播放 / 独占注入）。"""
+def _fmt_song_rule(song: str, factor: Optional[float], conditions: List[str]) -> List[str]:
+    """标准格式（参考 pla_songs.txt）：块之间空一行，闭合行保留尾随 tab。"""
     nl = "\n"
     out = ["music = {", f'\tsong = "{song}"', "\tchance = {", "\t\tmodifier = {"]
     if factor is not None:
@@ -362,13 +261,6 @@ def _fmt_song_rule(song: str, factor: Optional[float], conditions: List[str],
         if c:
             out.append(f"\t\t\t{c}")
     out.append("\t\t}\t\t")
-    for block in (extra_modifiers or []):
-        out.append("\t\tmodifier = {")
-        for l in block:
-            c = l.strip()
-            if c:
-                out.append(f"\t\t\t{c}")
-        out.append("\t\t}\t\t")
     out.append("\t}")
     out.append("}")
     return [l + nl for l in out] + [nl]
@@ -691,29 +583,17 @@ class MusicFolder:
     # -- 修改（内存中，save() 时落盘） --------------------------------------
 
     def add_entry(self, name: str, file: str, volume: Optional[float],
-                  factor: Optional[float], conditions: List[str],
-                  time_from: Optional[str] = None, time_to: Optional[str] = None,
-                  exclusive_mode: str = "none") -> None:
+                  factor: Optional[float], conditions: List[str]) -> None:
         """添加曲目（asset + songs 规则）。"""
         assert self.entry_by_name(name) is None, f"song name 已存在: {name}"
         self.entries.append(AssetEntry(name=name, file=file, volume=volume))
-        self.rules.append(SongRule(song=name, factor=factor,
-                                   conditions=[c for c in conditions if c.strip()],
-                                   time_from=time_from, time_to=time_to,
-                                   exclusive_mode=exclusive_mode))
+        self.rules.append(SongRule(song=name, factor=factor, conditions=[c for c in conditions if c.strip()]))
 
     def update_entry(self, name: str, new_file: Optional[str] = None,
                      new_volume: Optional[float] = None, new_name: Optional[str] = None,
                      new_factor: Optional[float] = None,
-                     new_conditions: Optional[List[str]] = None,
-                     new_time_from: object = _UNSET,
-                     new_time_to: object = _UNSET,
-                     new_exclusive_mode: object = _UNSET) -> None:
-        """编辑已有曲目；None 表示不修改该字段。
-
-        时间字段特殊：new_time_from 等用哨兵 _UNSET 表示「不修改」，
-        传 None 或 "" 均表示清除（用户清空了时间设置）。
-        """
+                     new_conditions: Optional[List[str]] = None) -> None:
+        """编辑已有曲目；None 表示不修改该字段。"""
         entry = self.entry_by_name(name)
         if entry is None:
             return
@@ -739,59 +619,6 @@ class MusicFolder:
                     r.conditions = list(conds)
             else:
                 self.rules.append(SongRule(song=name, factor=new_factor, conditions=list(conds)))
-        if (new_time_from is not _UNSET or new_time_to is not _UNSET
-                or new_exclusive_mode is not _UNSET):
-            # 哨兵 _UNSET = 未传（不修改）；None / "" 均表示清除
-            rules = self.rules_for_song(name)
-            if rules:
-                for r in rules:
-                    if new_time_from is not _UNSET:
-                        r.time_from = new_time_from or None
-                    if new_time_to is not _UNSET:
-                        r.time_to = new_time_to or None
-                    if new_exclusive_mode is not _UNSET:
-                        r.exclusive_mode = new_exclusive_mode or "none"
-
-    def _rebuild_time_blocks(self) -> None:
-        """保存前重建每首歌的特定时间播放块与独占注入块。
-
-        目标歌：生成「时间窗口外禁播」块（# time_from / # time_to 标记）。
-        独占（window/forever）：为同电台其它歌生成禁播块（# auto exclusive 标记）。
-        每次保存先清空旧的自动块再重建，保证文件与内存状态一致。
-        """
-        for r in self.rules:
-            r.extra_modifiers = [
-                m for m in r.extra_modifiers
-                if not any("# time_from" in l or "# auto exclusive" in l for l in m)]
-            if not r.time_from:
-                continue
-            block = [f"{TIME_FROM_MARK} {r.time_from}"]
-            if r.time_to:
-                block.append(f"{TIME_TO_MARK} {r.time_to}")
-            if r.exclusive_mode != "none":
-                block.append(f"{EXCLUSIVE_MARK} {r.exclusive_mode}")
-            block.append("factor = 0")
-            if r.time_to:
-                block.append(f"OR = {{ date < {r.time_from} date > {r.time_to} }}")
-            else:
-                block.append(f"OR = {{ date < {r.time_from} }}")
-            r.extra_modifiers.append(block)
-        for r in self.rules:
-            if r.exclusive_mode == "none" or not r.time_from:
-                continue
-            for other in self.rules:
-                if other is r:
-                    continue
-                block = [f"# auto exclusive = {r.exclusive_mode} by {r.song}",
-                         "factor = 0"]
-                if r.exclusive_mode == "window":
-                    if r.time_to:
-                        block.append(
-                            f"AND = {{ NOT = {{ date < {r.time_from} }} "
-                            f"NOT = {{ date > {r.time_to} }} }}")
-                    else:
-                        block.append(f"AND = {{ NOT = {{ date < {r.time_from} }} }}")
-                other.extra_modifiers.append(block)
 
     def remove_entry(self, name: str) -> None:
         """移除曲目（asset 条目 + 全部对应规则）。"""
@@ -806,7 +633,6 @@ class MusicFolder:
         策略：重新渲染文档 = 块外行 + 重建的块（块内注释保留在原始 raw_lines 中，
         数据部分用规范格式重新生成，保证字段顺序/格式一致）。
         """
-        self._rebuild_time_blocks()
         # ---- music.asset ----
         asset_lines: List[str] = []
         asset_lines.extend(self._asset_outer)
@@ -818,8 +644,7 @@ class MusicFolder:
         songs_lines: List[str] = []
         songs_lines.extend(self._songs_outer)
         for r in self.rules:
-            songs_lines.extend(
-                _fmt_song_rule(r.song, r.factor, r.conditions, r.extra_modifiers))
+            songs_lines.extend(_fmt_song_rule(r.song, r.factor, r.conditions))
         songs_text = "".join(songs_lines)
 
         self._write(self.asset_path, asset_text, backup)

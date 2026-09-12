@@ -10,7 +10,7 @@
 
 ## 1. 项目概览
 
-《钢铁雄心4》(Hearts of Iron IV) 音乐播放列表编辑器：图形界面工具，编辑游戏音乐目录下的 `music.asset` 与 `_songs.txt`，支持上传/转换 ogg、设置播放逻辑（状态 × 阵营 × 特定时间）、音量、一键生成独立电台 MOD 与开局音效。
+《钢铁雄心4》(Hearts of Iron IV) 音乐播放列表编辑器：图形界面工具，编辑游戏音乐目录下的 `music.asset` 与 `_songs.txt`，支持上传/转换 ogg、设置播放逻辑（状态 × 阵营）、音量、一键生成独立电台 MOD 与开局音效。
 
 | 项 | 说明 |
 |---|---|
@@ -19,7 +19,7 @@
 | 音频转换 | imageio-ffmpeg（内置 ffmpeg，转 ogg / wav） |
 | 图标处理 | Pillow（电台封面裁剪/合成） |
 | 打包 | PyInstaller（`HoI4MusicEditor.spec`，单文件免安装） |
-| 测试 | `unittest`（test_music_lib.py，59 项） |
+| 测试 | `unittest`（test_music_lib.py，50 项） |
 | 编码 | 源码与文档 UTF-8；写 `.mod`/`descriptor.mod` 用 UTF-8 BOM |
 
 ## 2. 目录结构
@@ -27,7 +27,7 @@
 ```
 app.py                  GUI 主程序（tkinter，入口）
 music_lib.py            核心库：解析/序列化/播放逻辑/音频转换/电台 MOD
-test_music_lib.py       单元测试（59 项）
+test_music_lib.py       单元测试（50 项）
 HoI4MusicEditor.spec    PyInstaller 打包配置
 logo.ico                软件图标（窗口 + exe）
 README.md               使用说明
@@ -57,7 +57,7 @@ build/ dist/            （PyInstaller 产物，**不入库**）
 | 类 | 职责 |
 |---|---|
 | `App` | 主窗口：模式切换、工具栏、歌曲列表（排序/搜索/多选）、保存/修复/删除、设置持久化 |
-| `SongDialog` | 添加/编辑歌曲对话框：song name、音量、播放逻辑、**起止日期、独占模式**（v1.7.0） |
+| `SongDialog` | 添加/编辑歌曲对话框：song name、音量、播放逻辑（状态 × 阵营 / 高级自定义） |
 | `BatchAddDialog` | 批量添加（入口已移除，代码保留） |
 | `ImageCropDialog` | 电台图标裁剪编辑器（152:120 选区 → 304×120 两帧） |
 | `RadioModDialog` | 新建电台 MOD（ID/显示名/目标目录） |
@@ -70,24 +70,15 @@ build/ dist/            （PyInstaller 产物，**不入库**）
 
 数据模型：
 
-- `SongRule`：一首歌的完整规则。字段含 `song`、`chance/factor`、`conditions`（预设组合）、`time_from`/`time_to`（起止日期，`None`=不限制）、`exclusive_mode`（`"none" | "window" | "forever"`）、`extra_modifiers`（额外 modifier 块内部行，含标记注释）以及 `raw_lines`。
+- `SongRule`：一首歌的完整规则。字段含 `song`、`chance/factor`、`conditions`（预设组合）以及 `raw_lines`。
 - `AssetEntry`：`music.asset` 条目（name/file/volume/raw_lines）。
 - `MusicDocument`：整体文档（条目列表 + 文件级操作）。
 - `MusicFolder`：音乐文件夹（含文件组定位）。
 - `RadioMod`：电台 MOD（结构/注册文件/修复）。
 
-解析与序列化（`parse_asset` / `parse_songs` / `_fmt_asset_entry` / `_fmt_song_rule`）：写回为标准格式（每个块间空一行、规范缩进），解析器兼容多行与**单行 `modifier = { ... }` 写法**。
+解析与序列化（`parse_asset` / `parse_songs` / `_parse_main_modifier` / `_fmt_asset_entry` / `_fmt_song_rule`）：写回为标准格式（每个块间空一行、规范缩进）；解析 `chance` 内的主 modifier 块（factor 与触发器条件）。
 
 播放逻辑（`conditions_from_preset` / `preset_from_conditions` / `summarize_conditions`）：预设组合 ↔ 条件文本；「主菜单」以哨兵注释 `# maintheme` 持久化。
-
-**特定时间播放 / 独占（v1.7.0）**：以带标记注释的 modifier 块注入 `_songs.txt`——
-
-- 标记注释：`# time_from = 1936.12.12`、`# time_to = 1936.12.12`、`# exclusive = window|forever`；自动注入的独占块标 `# auto exclusive = ...`（解析时不参与提取）。
-- 时间窗口写入 `date` 触发器：`OR = { date < 起日 date > 止日 }`（止日留空则无第二个条件）。
-- 独占模式保存时自动为同文件其它歌注入禁播块：`AND = { NOT = { date < 起日 } NOT = { date > 止日 } }`。
-- 编辑清除时间用哨兵 `_UNSET = object()` 区分「不修改」与「清除」（传 `None` 表示清除）。
-
-工具函数（`_extract_time_fields` / `summarize_time` 等）：从 extra 块提取时间/独占字段、生成树视图摘要（如 `1936.12.12 起`、`1936.1.1~1936.12.31`）。
 
 音频：`convert_to_ogg` / `convert_to_wav` / `wav_duration` / `crop_wav` / `apply_fade_out` / `make_start_game_wav`（44.1kHz/16bit/立体声；缓存 `%TEMP%\hoi4music_cache`）。
 
@@ -99,7 +90,7 @@ build/ dist/            （PyInstaller 产物，**不入库**）
 python -m unittest test_music_lib
 ```
 
-59 项，覆盖：真实文件往返一致性、解析/序列化、播放逻辑预设、音频转换、电台 MOD 结构、**特定时间播放与独占注入（v1.7.0 新增）**。改动 `music_lib.py` 后必须全绿；新增行为必须补测试并同步 README 的测试数量。
+50 项，覆盖：真实文件往返一致性、解析/序列化、播放逻辑预设、音频转换、电台 MOD 结构。改动 `music_lib.py` 后必须全绿；新增行为必须补测试并同步 README 的测试数量。
 
 ## 4. 关键文件格式
 
@@ -113,7 +104,7 @@ music = {
 }
 ```
 
-`_songs.txt`（`SongRule`）普通条目：
+`_songs.txt`（`SongRule`）条目：
 
 ```
 music = {
@@ -122,26 +113,6 @@ music = {
         modifier = {
             factor = 1
             has_war = yes
-        }
-    }
-}
-```
-
-`_songs.txt` 带时间窗口 + 独占的条目结构示意：
-
-```
-music = {
-    song = "my_song"
-    chance = {
-        modifier = {
-            factor = 1
-            OR = {
-                date < 1936.12.12
-                date > 1945.1.1
-            }
-            # time_from = 1936.12.12
-            # time_to = 1945.1.1
-            # exclusive = window
         }
     }
 }
@@ -168,7 +139,7 @@ python -m PyInstaller --noconfirm HoI4MusicEditor.spec
 
 ## 6. 版本号与更新规范（每次更新必读）
 
-版本常量：`app.py` 顶部 `VERSION = "1.7.0"`。
+版本常量：`app.py` 顶部 `VERSION = "1.7.1"`。
 
 ### 版本规则
 
@@ -208,12 +179,12 @@ Set-AuthenticodeSignature -FilePath dist\HoI4MusicEditor.exe -Certificate $cert
 
 ```powershell
 git add .
-git commit -m "描述本次改动（如：v1.7.0 新增特定时间播放与独占）"
+git commit -m "描述本次改动（如：v1.7.1 移除无效的特定时间播放/独占功能）"
 git push origin main
 ```
 
-## 9. 已知限制
+## 9. 已知限制与经验教训
 
-- 独占注入按整个 `_songs.txt` 文件作用：多电台混存于同一文件时会影响其它电台，建议一文件一电台（v1.7.0）。
+- **`chance` 条件播放不可靠（重要教训）**：`_songs.txt` 的 `chance` 权重/条件仅在游戏「加权随机（Weighted Shuffle）」播放模式下生效，且该模式存在社区已知 bug（条件时常不生效）。v1.7.0 曾据此实现「特定时间播放 / 独占」（写入 `factor = 0` + `date` 触发器的 modifier 块，写法与官方 Sabaton DLC 一致），**游戏内实测（含切到加权随机模式）仍无效**，故 v1.7.1 整体移除。今后不要基于该机制设计功能。
 - 窗口居中基于主窗口所在显示器；高 DPI（150%+）下 tkinter 由系统缩放，文字可能略模糊。
 - 自签名证书不受系统信任，SmartScreen 仍提示未知发布者。
